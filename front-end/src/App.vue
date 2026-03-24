@@ -93,9 +93,11 @@ onMounted(async () => {
                 />
             </p>
             <h3
-                v-if="messages.length === 0 && !loading"
+                v-if="messages.length === 0"
                 class="text-gray-500 text-center font-semibold"
             >
+                <h2 class="text-xl font-bold">좋은 하루예요!</h2>
+                <br />
                 안녕하세요! 음악 아이디어를 공유해보세요.
                 <br />AI가 함께 대화하며 아이디어를 발전시켜 드립니다.
             </h3>

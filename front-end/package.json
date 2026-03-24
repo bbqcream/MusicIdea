@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google/genai": "^1.46.0",
     "@tailwindcss/vite": "^4.2.2",
     "firebase": "^12.10.0",
     "localstorage": "^1.0.1",
