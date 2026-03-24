@@ -1,40 +1,113 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from "vue";
 import Chat from "./components/chat.vue";
-import { addDoc, collection, getDocs } from "firebase/firestore";
+import {
+    addDoc,
+    collection,
+    getDocs,
+    orderBy,
+    query,
+} from "firebase/firestore";
 import { db } from "./firebase/firebase";
 import type { ChatProps } from "./types/chatProps";
+import { GoogleGenAI } from "@google/genai";
 
 const chat = ref<string>("");
 const messages = ref<ChatProps[]>([]);
 const loading = ref<boolean>(false);
 const bottomRef = ref<HTMLElement | null>(null);
+const messagesContainer = ref<HTMLElement | null>(null);
+const isAtBottom = ref<boolean>(true);
 const pastMessages = localStorage.getItem("messages")
     ? JSON.parse(localStorage.getItem("messages") || "[]")
     : [];
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 const scrollToBottom = async () => {
     await nextTick();
     bottomRef.value?.scrollIntoView({ behavior: "smooth" });
+    isAtBottom.value = true;
+};
+
+const handleScroll = () => {
+    if (messagesContainer.value) {
+        const { scrollTop, scrollHeight, clientHeight } =
+            messagesContainer.value;
+        isAtBottom.value = scrollHeight - scrollTop - clientHeight < 100;
+    }
+};
+
+const formatDate = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}년 ${month}월 ${day}일`;
+};
+
+const groupedMessages = () => {
+    const groups: { date: string; messages: ChatProps[] }[] = [];
+    let currentDate = "";
+
+    messages.value.forEach((msg) => {
+        const dateStr = formatDate(msg.timestamp);
+        if (dateStr !== currentDate) {
+            currentDate = dateStr;
+            groups.push({ date: dateStr, messages: [msg] });
+        } else {
+            groups[groups.length - 1]?.messages.push(msg);
+        }
+    });
+
+    return groups;
 };
 
 const handleSendMessage = async () => {
     if (chat.value.trim() === "" || loading.value) return;
     try {
-        loading.value = true;
         const docRef = await addDoc(collection(db, "messages"), {
             msg: chat.value,
             timestamp: Date.now(),
             isAi: false,
         });
+        loading.value = true;
         messages.value.push({
             chatId: docRef.id,
             msg: chat.value,
             timestamp: Date.now(),
             isAi: false,
         });
-        console.log("메시지 전송:", chat.value);
+        await scrollToBottom();
+        const systemPrompt = `당신은 사용자의 감정 일기를 읽고 음악적 영감을 주는 '음악 큐레이터'입니다.
+
+[응답 가이드라인]
+- 감정 분석: 사용자의 글에서 핵심 감정을 파악해 공감해줍니다.
+- 코드 진행 추천: 해당 감정에 어울리는 4마디 코드 진행을 제안합니다. (예: Cmaj7 - G - Am - F)
+- 분위기 설명: 추천하는 악기, 템포(BPM), 전반적인 무드를 설명합니다.
+
+반드시 음악 전문가의 시선에서 답변하되, 따뜻하고 친절한 말투를 유지하세요.`;
+
+        const userMessage = `${systemPrompt}\n\n사용자: ${chat.value}`;
+
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: userMessage,
+        });
+        console.log(response.text);
+        await addDoc(collection(db, "messages"), {
+            msg: response.text,
+            timestamp: Date.now(),
+            isAi: true,
+        });
+        messages.value.push({
+            chatId: docRef.id,
+            msg: response.text?.toString() || "",
+            timestamp: Date.now(),
+            isAi: true,
+        });
         chat.value = "";
+        console.log("메시지 전송:", chat.value);
     } catch (error) {
         console.error("메시지 전송 실패:", error);
     } finally {
@@ -42,10 +115,15 @@ const handleSendMessage = async () => {
         loading.value = false;
     }
 };
+
 onMounted(async () => {
     try {
         loading.value = true;
-        const querySnapshot = await getDocs(collection(db, "messages"));
+        const q = query(
+            collection(db, "messages"),
+            orderBy("timestamp", "asc"),
+        );
+        const querySnapshot = await getDocs(q);
         messages.value = [];
         querySnapshot.forEach((doc) => {
             messages.value.push({
@@ -54,7 +132,6 @@ onMounted(async () => {
                 timestamp: doc.data().timestamp,
                 isAi: doc.data().isAi || false,
             });
-            console.log(doc.id, "=>", doc.data());
             localStorage.setItem("messages", JSON.stringify(messages.value));
         });
     } catch (error) {
@@ -78,12 +155,14 @@ onMounted(async () => {
             />
             <h2 class="font-semibold">새로운 채팅</h2>
         </div>
+        <!-- 여기가 밑으로 가는 거 보여주는 곳-->
+
         <!-- 여기서 채팅 넣는 곳 -->
-        <div class="flex flex-col gap-10 scroll-auto">
-            <p
-                v-if="loading"
-                class="text-gray-500 flex w-full justify-center"
-            ></p>
+        <div
+            ref="messagesContainer"
+            class="flex flex-col gap-10 scroll-auto"
+            @scroll="handleScroll"
+        >
             <p v-for="el in pastMessages && loading" :key="el.chatId">
                 <Chat
                     :chatId="el.chatId"
@@ -101,18 +180,43 @@ onMounted(async () => {
                 안녕하세요! 음악 아이디어를 공유해보세요.
                 <br />AI가 함께 대화하며 아이디어를 발전시켜 드립니다.
             </h3>
-            <div v-for="el in messages" :key="el.chatId">
-                <Chat
-                    :chatId="el.chatId"
-                    :msg="el.msg"
-                    :timestamp="el.timestamp"
-                    :isAi="el.isAi"
-                />
-            </div>
+            <!-- 날짜별 메시지 그룹화 -->
+            <template v-for="group in groupedMessages()" :key="group.date">
+                <!-- 날짜 구분선 -->
+                <div class="flex items-center gap-3 my-4">
+                    <div class="flex-1 border-t border-gray-300"></div>
+                    <span class="text-xs text-gray-500 px-2">{{
+                        group.date
+                    }}</span>
+                    <div class="flex-1 border-t border-gray-300"></div>
+                </div>
+                <!-- 해당 날짜의 메시지들 -->
+                <div v-for="el in group.messages" :key="el.chatId">
+                    <Chat
+                        :chatId="el.chatId"
+                        :msg="el.msg"
+                        :timestamp="el.timestamp"
+                        :isAi="el.isAi"
+                    />
+                </div>
+            </template>
+            <div v-if="loading">AI가 답변을 생성 중입니다...</div>
             <div ref="bottomRef"></div>
         </div>
+        <!-- 여기가 밑으로 가는 거 보여주는 곳-->
         <!-- 메시지 입력창  -->
         <div class="w-full sticky bottom-20 left-0 px-4">
+            <div
+                v-if="!isAtBottom"
+                class="w-full flex justify-center mb-4 cursor-pointer"
+            >
+                <img
+                    src="/arrow.svg"
+                    alt="맨 아래로 이동"
+                    class="w-8 h-8 hover:opacity-80 transition-opacity"
+                    @click="scrollToBottom"
+                />
+            </div>
             <textarea
                 v-model="chat"
                 placeholder="메시지를 입력하세요..."
@@ -124,8 +228,8 @@ onMounted(async () => {
                 }"
             />
             <img
-                src="/public/chatarrow.svg"
-                class="absolute right-8 bottom-6 cursor-pointer hover:opacity-80"
+                :src="chat.trim() ? '/chatarrow.svg' : '/opchatarrow.svg'"
+                class="absolute right-8 bottom-6 cursor-pointer hover:opacity-80 transition-opacity duration-600"
                 alt="메시지 전송"
                 @click="handleSendMessage"
             />
