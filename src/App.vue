@@ -20,6 +20,7 @@ const loading = ref<boolean>(false);
 const bottomRef = ref<HTMLElement | null>(null);
 const messagesContainer = ref<HTMLElement | null>(null);
 const isAtBottom = ref<boolean>(true);
+const isError = ref<string | null>(null);
 const pastMessages = localStorage.getItem("messages")
     ? JSON.parse(localStorage.getItem("messages") || "[]")
     : [];
@@ -51,6 +52,7 @@ const deleteMessages = async () => {
         await Promise.all(deletePromises);
         console.log("모든 메시지가 삭제되었습니다.");
     } catch (error) {
+        isError.value = "삭제 중 오류가 발생했습니다.";
         console.error("삭제 중 오류 발생:", error);
     }
 };
@@ -136,6 +138,7 @@ const handleSendMessage = async () => {
 
         console.log("메시지 전송 완료");
     } catch (error) {
+        isError.value = "메시지 전송에 실패했습니다.";
         console.error("메시지 전송 실패:", error);
     } finally {
         await scrollToBottom();
@@ -162,6 +165,7 @@ onMounted(async () => {
             localStorage.setItem("messages", JSON.stringify(messages.value));
         });
     } catch (error) {
+        isError.value = "메시지 로드에 실패했습니다.";
         console.error("메시지 로드 실패:", error);
     } finally {
         await scrollToBottom();
@@ -181,7 +185,7 @@ onMounted(async () => {
                 alt="이미지가 안보임 사망함."
             />
             <h2
-                class="font-semibold cursor-pointer"
+                class="font-semibold cursor-pointer hover:text-blue-500 transition-colors duration-300"
                 v-on:click="deleteMessages"
             >
                 새로운 채팅
@@ -232,7 +236,12 @@ onMounted(async () => {
                     />
                 </div>
             </template>
-            <div v-if="loading">AI가 답변을 생성 중입니다...</div>
+            <p v-if="isError" class="text-red-500 text-center text-base">
+                {{ isError }}
+            </p>
+            <div v-if="loading" class="text-gray-500 text-center">
+                <span class="dot-animation">AI가 답변을 생성 중입니다</span>
+            </div>
             <div ref="bottomRef"></div>
         </div>
         <!-- 여기가 밑으로 가는 거 보여주는 곳-->
@@ -268,3 +277,24 @@ onMounted(async () => {
         </div>
     </div>
 </template>
+
+<style scoped>
+@keyframes dots {
+    0%,
+    20% {
+        content: ".";
+    }
+    40% {
+        content: "..";
+    }
+    60%,
+    100% {
+        content: "...";
+    }
+}
+
+.dot-animation::after {
+    content: ".";
+    animation: dots 1.5s steps(3, end) infinite;
+}
+</style>
