@@ -103,7 +103,7 @@ const handleSendMessage = async () => {
 
 [응답 가이드라인]
 - 감정 분석: 사용자의 글에서 핵심 감정을 파악해 공감해줍니다.
-- 코드 진행 추천: 해당 감정에 어울리는 4마디 코드 진행을 제안합니다. (예: Cmaj7 - G - Am - F)
+- 코드 진행 추천: 해당 감정에 어울리는 4마디 코드 진행을 제안합니다.
 - 분위기 설명: 추천하는 악기, 템포(BPM), 전반적인 무드를 설명합니다.
 
 반드시 음악 전문가의 시선에서 답변하되, 따뜻하고 친절한 말투를 유지하세요.
@@ -114,7 +114,7 @@ const handleSendMessage = async () => {
 `;
 
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.5-flash-lite",
             contents: `${systemPrompt}\n\n사용자: ${userMessage}`,
         });
 
