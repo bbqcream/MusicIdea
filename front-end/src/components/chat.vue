@@ -15,7 +15,7 @@ const formattedTime = formatTime(props.timestamp);
 
 <template>
     <div
-        class="w-full flex gap-5"
+        class="w-full flex gap-5 whitespace-pre-wrap"
         :style="{ justifyContent: isAi ? 'flex-start' : 'flex-end' }"
     >
         <img

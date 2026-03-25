@@ -4,6 +4,8 @@ import Chat from "./components/chat.vue";
 import {
     addDoc,
     collection,
+    deleteDoc,
+    doc,
     getDocs,
     orderBy,
     query,
@@ -38,6 +40,21 @@ const handleScroll = () => {
     }
 };
 
+const deleteMessages = async () => {
+    try {
+        localStorage.removeItem("messages");
+        messages.value = [];
+        const querySnapshot = await getDocs(collection(db, "messages"));
+        const deletePromises = querySnapshot.docs.map((document) =>
+            deleteDoc(doc(db, "messages", document.id)),
+        );
+        await Promise.all(deletePromises);
+        console.log("모든 메시지가 삭제되었습니다.");
+    } catch (error) {
+        console.error("삭제 중 오류 발생:", error);
+    }
+};
+
 const formatDate = (timestamp: number): string => {
     const date = new Date(timestamp);
     const year = date.getFullYear();
@@ -66,19 +83,22 @@ const groupedMessages = () => {
 const handleSendMessage = async () => {
     if (chat.value.trim() === "" || loading.value) return;
     try {
-        const docRef = await addDoc(collection(db, "messages"), {
-            msg: chat.value,
+        loading.value = true;
+        const userMessage = chat.value;
+        const userDocRef = await addDoc(collection(db, "messages"), {
+            msg: userMessage,
             timestamp: Date.now(),
             isAi: false,
         });
-        loading.value = true;
+        chat.value = "";
         messages.value.push({
-            chatId: docRef.id,
-            msg: chat.value,
+            chatId: userDocRef.id,
+            msg: userMessage,
             timestamp: Date.now(),
             isAi: false,
         });
         await scrollToBottom();
+
         const systemPrompt = `당신은 사용자의 감정 일기를 읽고 음악적 영감을 주는 '음악 큐레이터'입니다.
 
 [응답 가이드라인]
@@ -88,26 +108,28 @@ const handleSendMessage = async () => {
 
 반드시 음악 전문가의 시선에서 답변하되, 따뜻하고 친절한 말투를 유지하세요.`;
 
-        const userMessage = `${systemPrompt}\n\n사용자: ${chat.value}`;
-
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: userMessage,
+            contents: `${systemPrompt}\n\n사용자: ${userMessage}`,
         });
-        console.log(response.text);
-        await addDoc(collection(db, "messages"), {
-            msg: response.text,
+
+        const aiResponseText =
+            response.text?.toString().replace(/\*/g, "").replace("#", "") || "";
+
+        const aiDocRef = await addDoc(collection(db, "messages"), {
+            msg: aiResponseText,
             timestamp: Date.now(),
             isAi: true,
         });
+
         messages.value.push({
-            chatId: docRef.id,
-            msg: response.text?.toString() || "",
+            chatId: aiDocRef.id,
+            msg: aiResponseText,
             timestamp: Date.now(),
             isAi: true,
         });
-        chat.value = "";
-        console.log("메시지 전송:", chat.value);
+
+        console.log("메시지 전송 완료");
     } catch (error) {
         console.error("메시지 전송 실패:", error);
     } finally {
@@ -153,7 +175,12 @@ onMounted(async () => {
                 class="w-20"
                 alt="이미지가 안보임 사망함."
             />
-            <h2 class="font-semibold">새로운 채팅</h2>
+            <h2
+                class="font-semibold cursor-pointer"
+                v-on:click="deleteMessages"
+            >
+                새로운 채팅
+            </h2>
         </div>
         <!-- 여기가 밑으로 가는 거 보여주는 곳-->
 
